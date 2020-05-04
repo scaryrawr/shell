@@ -36,7 +36,6 @@ export interface GlobalEventTag {
 }
 
 export enum GlobalEvent {
-    GtkShellChanged,
     GtkThemeChanged,
     MonitorsChanged,
     OverviewShown,
