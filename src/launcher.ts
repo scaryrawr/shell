@@ -43,7 +43,7 @@ const SEARCH_PATHS: Array<[string, string]> = [
 
 let TERMINAL = new once_cell.OnceCell<string>();
 
-const MODES = [':', 't:', '='];
+const MODES = [':', 't:', '=', '?'];
 
 export class Launcher extends search.Search {
     selections: Array<ShellWindow | [string, AppInfo]>;
@@ -195,6 +195,13 @@ export class Launcher extends search.Search {
                 log.info(`${expr} = ${value}`);
                 this.set_text('= ' + value);
                 return true;
+            } else if (id.startsWith('?')) {
+                const webSearch = id.slice(1).trim();
+                const searchBase = ext.settings.search_engine();
+                log.info(searchBase);
+                const webQuery = searchBase + encodeURIComponent(webSearch);
+                const cmd = `xdg-open "${webQuery}"`;
+                spawnCommandLine(cmd);
             }
 
             return false;
