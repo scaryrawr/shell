@@ -24,12 +24,15 @@ const HOME_DIR: string = GLib.get_home_dir();
 const SEARCH_PATHS: Array<[string, string]> = [
     // System-wide
     ["System", "/usr/share/applications/"],
+    ["System-Local", "/usr/local/share/applications/"],
     // User-local
     ["Local", HOME_DIR + "/.local/share/applications/"],
     // System-wide flatpaks
     ["Flatpak (system)", "/var/lib/flatpak/exports/share/applications/"],
     // User-local flatpaks
-    ["Flatpak", HOME_DIR + "/.local/share/flatpak/exports/share/applications/"]
+    ["Flatpak", HOME_DIR + "/.local/share/flatpak/exports/share/applications/"],
+    // System-wide Snaps
+    ["Snap (system)", "/var/lib/snapd/desktop/applications/"]
 ];
 
 const MODES: launchers.LauncherExtension[] = [
