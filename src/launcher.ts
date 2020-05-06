@@ -32,7 +32,12 @@ const SEARCH_PATHS: Array<[string, string]> = [
     ["Flatpak", HOME_DIR + "/.local/share/flatpak/exports/share/applications/"]
 ];
 
-const MODES: launchers.LauncherExtension[] = [new launchers.TerminalLauncher(), new launchers.CommandLauncher(), new launchers.CalcLauncher()];
+const MODES: launchers.LauncherExtension[] = [
+    new launchers.TerminalLauncher(),
+    new launchers.CommandLauncher(),
+    new launchers.CalcLauncher(),
+    new launchers.WebSearchLauncher()
+];
 
 export class Launcher extends search.Search {
     selections: Array<ShellWindow | [string, AppInfo]>;
