@@ -149,25 +149,13 @@ export class Search {
 
     select() {
         this.widgets[this.active_id].add_style_pseudo_class(
-            "focus"
-        );
-        this.widgets[this.active_id].add_style_pseudo_class(
-            "hover"
-        );
-        this.widgets[this.active_id].add_style_pseudo_class(
-            "active"
+            "select"
         );
     }
 
     unselect() {
         this.widgets[this.active_id].remove_style_pseudo_class(
-            "focus"
-        );
-        this.widgets[this.active_id].remove_style_pseudo_class(
-            "hover"
-        );
-        this.widgets[this.active_id].remove_style_pseudo_class(
-            "active"
+            "select"
         );
     }
 

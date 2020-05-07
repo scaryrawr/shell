@@ -33,6 +33,9 @@ const { cursor_rect, is_move_op } = Lib;
 const { layoutManager, loadTheme, overview, panel, setThemeStylesheet, screenShield, sessionMode } = imports.ui.main;
 const Tags = Me.imports.tags;
 
+const STYLESHEET_PATHS = ['light', 'dark'].map(stylesheet_path);
+const STYLESHEETS = STYLESHEET_PATHS.map(Gio.File.new_for_path);
+
 enum Style { Light, Dark }
 
 interface Display {
@@ -166,15 +169,19 @@ export class Ext extends Ecs.System<ExtEvent> {
 
         this.load_settings();
 
-        this.register_fn(() => this.load_theme(this.current_style));
+        this.register_fn(() => load_theme(this.current_style));
 
-        this.settings.int.connect('changed::gtk-theme', () => {
-            this.register(Events.global(GlobalEvent.GtkThemeChanged));
-        });
+        if (this.settings.int) {
+            this.settings.int.connect('changed::gtk-theme', () => {
+                this.register(Events.global(GlobalEvent.GtkThemeChanged));
+            });
+        }
 
-        this.settings.shell.connect('changed::name', () => {
-            this.register(Events.global(GlobalEvent.GtkShellChanged));
-        });
+        if (this.settings.shell) {
+            this.settings.shell.connect('changed::name', () => {
+                this.register(Events.global(GlobalEvent.GtkShellChanged));
+            });
+        }
     }
 
     // System interface
@@ -399,7 +406,6 @@ export class Ext extends Ecs.System<ExtEvent> {
         }
     }
 
-    load_theme(style: Style) { load_theme(style === Style.Dark ? 'dark' : 'light') }
 
     monitor_work_area(monitor: number): Rectangle {
         const meta = global.display.get_workspace_manager()
@@ -685,11 +691,11 @@ export class Ext extends Ecs.System<ExtEvent> {
     }
 
     on_gtk_shell_changed() {
-        this.load_theme(this.settings.is_dark_shell() ? Style.Dark : Style.Light);
+        load_theme(this.settings.is_dark_shell() ? Style.Dark : Style.Light);
     }
 
     on_gtk_theme_change() {
-        this.load_theme(this.settings.is_dark_shell() ? Style.Dark : Style.Light);
+        load_theme(this.settings.is_dark_shell() ? Style.Dark : Style.Light);
     }
 
     on_show_window_titles() {
@@ -959,9 +965,11 @@ export class Ext extends Ecs.System<ExtEvent> {
             }
         });
 
-        this.connect(this.settings.mutter, 'changed::workspaces-only-on-primary', () => {
-            this.register(Events.global(GlobalEvent.MonitorsChanged));
-        });
+        if (this.settings.mutter) {
+            this.connect(this.settings.mutter, 'changed::workspaces-only-on-primary', () => {
+                this.register(Events.global(GlobalEvent.MonitorsChanged));
+            });
+        }
 
         this.connect(layoutManager, 'monitors-changed', () => {
             this.register(Events.global(GlobalEvent.MonitorsChanged));
@@ -1359,30 +1367,39 @@ function find_unused_workspace(): [number, any] {
     return [id, new_work];
 }
 
+function stylesheet_path(name: string) { return Me.path + "/" + name + ".css"; }
+
 // Supplements the loaded theme with the extension's theme.
-function load_theme(stylesheet: string): string | any {
+function load_theme(style: Style): string | any {
+    let pop_stylesheet = Number(style)
     try {
-        const themeContext = St.ThemeContext.get_for_stage(global.stage);
+        const theme_context = St.ThemeContext.get_for_stage(global.stage);
 
-        // Get the existing shell theme if exists
-        const existingTheme = themeContext.get_theme();
+        const existing_theme: null | any = theme_context.get_theme();
 
-        // Load the pop theme style sheet
-        const popStyleSheet = Lib.dbg(Me.path + "/" + stylesheet + ".css");
+        const pop_stylesheet_path = STYLESHEET_PATHS[pop_stylesheet];
 
-        if (existingTheme) {
-            // User has an existing theme, so merge update with pop styling
-            existingTheme.load_stylesheet(Gio.File.new_for_path(popStyleSheet));
+        if (existing_theme) {
+            /* Must unload stylesheets, or else the previously loaded
+             * stylesheets will persist when loadTheme() is called
+             * (found in source code of imports.ui.main).
+             */
+            for (const s of STYLESHEETS) {
+                existing_theme.unload_stylesheet(s);
+            }
+
+            // Merge theme update with pop shell styling
+            existing_theme.load_stylesheet(STYLESHEETS[pop_stylesheet]);
 
             // Perform theme update
-            themeContext.set_theme(existingTheme);
+            theme_context.set_theme(existing_theme);
         } else {
             // User does not have a theme loaded, so use pop styling + default
-            setThemeStylesheet(popStyleSheet);
+            setThemeStylesheet(pop_stylesheet_path);
             loadTheme();
         }
 
-        return popStyleSheet;
+        return pop_stylesheet_path;
     } catch (e) {
         Log.error("failed to load stylesheet: " + e);
         return null;
