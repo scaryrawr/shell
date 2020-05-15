@@ -144,7 +144,7 @@ export class ShellWindow {
             && ext.tilable.get_or(this.entity, () => {
                 return !this.meta.is_skip_taskbar()
                     // Only normal windows will be considered for tiling
-                    && this.meta.window_type == Meta.WindowType.NORMAL
+                    && this.meta.window_type === Meta.WindowType.NORMAL
                     // Transient windows are most likely dialogs
                     && !this.is_transient()
                     // Blacklist any windows that happen to leak through our filter
