@@ -72,7 +72,7 @@ export class CalcLauncher implements LauncherExtension {
     }
 
     search_results(expr: string): Array<St.Widget> | null {
-        const icon_size = this.search?.icon_size() ?? DEFAULT_ICON_SIZE;
+        if (expr.length === 0) return null;
 
         let out: string;
 
@@ -82,7 +82,10 @@ export class CalcLauncher implements LauncherExtension {
             out = expr + ' x = ?'
         }
 
-        const item = new widgets.ApplicationBox(out,
+        const icon_size = this.search?.icon_size() ?? DEFAULT_ICON_SIZE;
+
+        const item = new widgets.ApplicationBox(
+            out,
             new St.Icon({
                 icon_name: 'x-office-spreadsheet', // looks like calculations?
                 icon_size: icon_size / 2,

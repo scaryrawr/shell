@@ -120,6 +120,8 @@ export class Ext extends Ecs.System<ExtEvent> {
 
     tween_signals: Map<string, [SignalID, any]> = new Map();
 
+    tiling_toggle_switch: any | null = null;  /** reference to the PopupSwitchMenuItem menu item, so state can be toggled */
+
     /** Initially set to true when the extension is initializing */
     init: boolean = true;
 
@@ -1142,6 +1144,53 @@ export class Ext extends Ecs.System<ExtEvent> {
         }
     }
 
+    toggle_tiling() : any {
+        if (this.auto_tiler) {
+            Log.info(`tile by default disabled!`);
+            this.unregister_storage(this.auto_tiler.attached);
+            this.auto_tiler = null;
+            this.settings.set_tile_by_default(false);
+            this.tiling_toggle_switch._switch.state = false;
+        } else {
+            Log.info(`tile by default enabled!`);
+
+            const original = this.active_workspace();
+
+            let tiler = new auto_tiler.AutoTiler(
+                new Forest.Forest()
+                    .connect_on_attach((entity: Entity, window: Entity) => {
+                        tiler.attached.insert(window, entity);
+                    }),
+                this.register_storage()
+            );
+
+            this.auto_tiler = tiler;
+
+            this.settings.set_tile_by_default(true);
+            this.tiling_toggle_switch._switch.state = true;
+
+            for (const window of this.windows.values()) {
+                if (window.is_tilable(this)) {
+                    let actor = window.meta.get_compositor_private();
+                    if (actor) {
+                        let ws = window.meta.get_workspace();
+                        if (!window.meta.minimized) {
+                            tiler.auto_tile(this, window, false);
+                        }
+
+                        if (ws === null || ws.index() !== original) {
+                            actor.hide()
+                        } else {
+                            actor.show();
+                        }
+                    }
+                }
+            }
+
+            this.register_fn(() => this.switch_to_workspace(original));
+        }
+    }
+
     unset_grab_op() {
         if (this.grab_op !== null) {
             let window = this.windows.get(this.grab_op.entity);
@@ -1312,6 +1361,8 @@ function enable() {
         ext.register_fn(() => {
             if (ext?.auto_tiler) ext.snap_windows();
         });
+
+        ext.on_active_hint();
     }
 
     ext.signals_attach();
@@ -1335,10 +1386,19 @@ function disable() {
         ext.signals_remove();
         ext.exit_modes();
 
+        if (ext.settings.active_hint()) {
+            ext.active_hint?.untrack();
+        }
+
         layoutManager.removeChrome(ext.overlay);
 
         ext.keybindings.disable(ext.keybindings.global)
             .disable(ext.keybindings.window_focus)
+    }
+
+    if (indicator) {
+        indicator.destroy();
+        indicator = null;
     }
 }
 

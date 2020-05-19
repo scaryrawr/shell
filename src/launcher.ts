@@ -132,7 +132,8 @@ export class Launcher extends search.Search {
                     const [where, app] = selection;
                     const generic = app.generic_name();
 
-                    data = new widgets.ApplicationBox(generic ? `${generic} (${app.name()}) [${where}]` : `${app.name()} [${where}]`,
+                    data = new widgets.ApplicationBox(
+                        generic ? `${generic} (${app.name()}) [${where}]` : `${app.name()} [${where}]`,
                         new St.Icon({
                             icon_name: 'application-default-symbolic',
                             icon_size: this.icon_size() / 2,
@@ -140,8 +141,9 @@ export class Launcher extends search.Search {
                         }),
                         new St.Icon({
                             gicon: app.icon(),
-                            icon_size: this.icon_size()
-                        })).container;
+                            icon_size: this.icon_size(),
+                        })
+                    ).container;
                 }
 
                 this.active.push(data);
