@@ -51,6 +51,8 @@ interface Monitor extends Rectangular {
     index: number;
 }
 
+const WINDOW_CREATE_BLACKLIST: string[] = ['Microsoft Teams Notification'];
+
 export class Ext extends Ecs.System<ExtEvent> {
     /** Mechanism for managing keybindings */
     keybindings: Keybindings.Keybindings = new Keybindings.Keybindings(this);
@@ -832,6 +834,10 @@ export class Ext extends Ecs.System<ExtEvent> {
     }
 
     on_window_create(window: Meta.Window, actor: Clutter.Actor) {
+        if (WINDOW_CREATE_BLACKLIST.some(listed => listed === window.get_title() || listed === window.get_wm_class())) {
+            return;
+        }
+
         let win = this.get_window(window);
         if (win) {
             const entity = win.entity;
