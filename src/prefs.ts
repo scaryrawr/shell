@@ -1,20 +1,23 @@
 export { }
 
+const ExtensionUtils = imports.misc.extensionUtils;
 // @ts-ignore
-const Me = imports.misc.extensionUtils.getCurrentExtension();
+const Me = ExtensionUtils.getCurrentExtension();
 
 const { Gtk } = imports.gi;
 
 const { Settings } = imports.gi.Gio;
 
 import * as settings from 'settings';
+import * as log from 'log';
 
 interface AppWidgets {
-    window_titles: any,
-    snap_to_grid: any,
-    search_engine: any,
-    outer_gap: any,
     inner_gap: any,
+    outer_gap: any,
+    smart_gaps: any,
+    snap_to_grid: any,
+    window_titles: any,
+    search_engine: any,
 }
 
 const SEARCH_ENGINES: string[] = [
@@ -50,6 +53,12 @@ function settings_dialog_new(): Gtk.Container {
         ext.set_search_engine(SEARCH_ENGINES[app.search_engine.get_active()]);
     })
 
+    app.smart_gaps.set_active(ext.smart_gaps());
+    app.smart_gaps.connect('state-set', (_widget: any, state: boolean) => {
+        ext.set_smart_gaps(state);
+        Settings.sync();
+    })
+
     app.outer_gap.set_text(String(ext.gap_outer()));
     app.outer_gap.connect('activate', (widget: any) => {
         let parsed = parseInt((widget.get_text() as string).trim());
@@ -83,14 +92,22 @@ function settings_dialog_view(): [AppWidgets, Gtk.Container] {
         xalign: 0.0,
         hexpand: true
     });
-    let window_titles = new Gtk.Switch({ halign: Gtk.Align.START });
 
     let snap_label = new Gtk.Label({
         label: "Snap to Grid (Floating Mode)",
         xalign: 0.0
     });
 
+    let smart_label = new Gtk.Label({
+        label: "Smart Gaps",
+        xalign: 0.0
+    });
+
+    let window_titles = new Gtk.Switch({ halign: Gtk.Align.START });
+
     let snap_to_grid = new Gtk.Switch({ halign: Gtk.Align.START });
+
+    let smart_gaps = new Gtk.Switch({ halign: Gtk.Align.START });
 
     grid.attach(win_label, 0, 0, 1, 1);
     grid.attach(window_titles, 1, 0, 1, 1);
@@ -98,11 +115,16 @@ function settings_dialog_view(): [AppWidgets, Gtk.Container] {
     grid.attach(snap_label, 0, 1, 1, 1);
     grid.attach(snap_to_grid, 1, 1, 1, 1);
 
-    const search_engine = search_engine_section(grid, 2);
+    grid.attach(smart_label, 0, 2, 1, 1);
+    grid.attach(smart_gaps, 1, 2, 1, 1);
 
-    let [inner_gap, outer_gap] = gaps_section(grid, 3);
+    logging_combo(grid, 3);
 
-    let settings = { inner_gap, outer_gap, snap_to_grid, window_titles, search_engine };
+    let [inner_gap, outer_gap] = gaps_section(grid, 4);
+
+    const search_engine = search_engine_section(grid, 8);
+
+    let settings = { inner_gap, outer_gap, smart_gaps, snap_to_grid, window_titles, search_engine };
 
     return [settings, grid];
 }
@@ -157,6 +179,37 @@ function search_engine_section(grid: any, top: number): any {
 
 function number_entry(): Gtk.Widget {
     return new Gtk.Entry({ input_purpose: Gtk.InputPurpose.NUMBER });
+}
+
+function logging_combo(grid: any, top_index: number) {
+    let log_label = new Gtk.Label({
+        label: `Log Level`,
+        halign: Gtk.Align.START
+    });
+
+    grid.attach(log_label, 0, top_index, 1, 1);
+
+    let log_combo = new Gtk.ComboBoxText();
+
+    for (const key in log.LOG_LEVELS) {
+        // since log level loop will contain key and level,
+        // then cherry-pick the number, key will be the text value
+        if (typeof log.LOG_LEVELS[key] === 'number') {
+            log_combo.append(`${log.LOG_LEVELS[key]}`, key);
+        }
+    }
+
+    let current_log_level = log.log_level();
+
+    log_combo.set_active_id(`${current_log_level}`);
+    log_combo.connect("changed", () => {
+        let activeId = log_combo.get_active_id();
+        
+        let settings = ExtensionUtils.getSettings();
+        settings.set_uint('log-level', activeId);
+    });
+
+    grid.attach(log_combo, 1, top_index, 1, 1);
 }
 
 // @ts-ignore

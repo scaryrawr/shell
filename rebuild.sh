@@ -1,3 +1,17 @@
+# Check if user confirmed overriding shortcuts
+if [ ! -f "./.confirm_shortcut_change" ]; then
+    read -p "Pop shell will override your default shortcuts. Are you sure? (y/n) " CONT
+    if [ "$CONT" = "y" ]
+    then
+        touch "./.confirm_shortcut_change"
+    else
+        echo "Cancelled"
+        exit 1
+    fi
+else
+    echo "Shortcut change already confirmed"
+fi
+
 set -xe
 
 # Build and install extension
@@ -27,16 +41,20 @@ dconf write ${KEYS_GNOME_SHELL}/toggle-message-tray "@as ['<Super>v']"
 dconf write ${KEYS_GNOME_WM}/switch-to-workspace-left "@as []"
 # Switch to workspace right: disable <Super>Right
 dconf write ${KEYS_GNOME_WM}/switch-to-workspace-right "@as []"
+# Move to monitor up: disable <Super><Shift>Up
+dconf write ${KEYS_GNOME_WM}/move-to-monitor-up "@as []"
+# Move to monitor down: disable <Super><Shift>Down
+dconf write ${KEYS_GNOME_WM}/move-to-monitor-down "@as []"
 
 # Super + direction keys, move window left and right monitors, or up and down workspaces
 # Move window one monitor to the left
-dconf write ${KEYS_GNOME_WM}/move-to-monitor-left "['<Shift><Super>Left','<Shift><Super>${left}']"
+dconf write ${KEYS_GNOME_WM}/move-to-monitor-left "@as []"
 # Move window one workspace down
-dconf write ${KEYS_GNOME_WM}/move-to-workspace-down "['<Shift><Super>Down','<Shift><Super>${down}']"
+dconf write ${KEYS_GNOME_WM}/move-to-workspace-down "@as []"
 # Move window one workspace up
-dconf write ${KEYS_GNOME_WM}/move-to-workspace-up "['<Shift><Super>Up','<Shift><Super>${up}']"
+dconf write ${KEYS_GNOME_WM}/move-to-workspace-up "@as []"
 # Move window one monitor to the right
-dconf write ${KEYS_GNOME_WM}/move-to-monitor-right "['<Shift><Super>Right','<Shift><Super>${right}']"
+dconf write ${KEYS_GNOME_WM}/move-to-monitor-right "@as []"
 
 # Super + Ctrl + direction keys, change workspaces, move focus between monitors
 # Move to workspace below

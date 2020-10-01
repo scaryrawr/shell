@@ -14,7 +14,7 @@ import type { Search } from 'search';
 
 const DEFAULT_ICON_SIZE = 34;
 
-const TERMINAL = new once_cell.OnceCell<string>();
+const TERMINAL = new once_cell.OnceCell<[string, string]>();
 
 export type LauncherExtension = {
     // Mode Prefix for launcher
@@ -84,19 +84,19 @@ export class CalcLauncher implements LauncherExtension {
 
         const icon_size = this.search?.icon_size() ?? DEFAULT_ICON_SIZE;
 
-        const item = new widgets.ApplicationBox(
-            out,
-            new St.Icon({
-                icon_name: 'x-office-spreadsheet', // looks like calculations?
-                icon_size: icon_size / 2,
-                style_class: "pop-shell-search-cat"
-            }),
-            new St.Icon({
-                icon_name: 'accessories-calculator',
-                icon_size: icon_size
-            }));
-
-        return [item.container];
+        return [
+            widgets.application_button(
+                out,
+                new St.Icon({
+                    icon_name: 'x-office-spreadsheet', // looks like calculations?
+                    icon_size: icon_size / 2,
+                    style_class: "pop-shell-search-cat"
+                }),
+                new St.Icon({
+                    icon_name: 'accessories-calculator',
+                    icon_size: icon_size
+                }))
+        ];
     }
 }
 
@@ -164,15 +164,15 @@ export class RecentDocumentLauncher implements LauncherExtension {
 
         const normalized_query = query.toLowerCase();
         this.results = items.filter(item => item.display_name.toLowerCase().includes(normalized_query) || item.uri.toLowerCase().includes(normalized_query)).slice(0, this.search.list_max()).sort((a, b) => a.display_name.localeCompare(b.display_name));
-        return this.results.map((item): St.Widget => new widgets.ApplicationBox(`${item.display_name}: ${decodeURI(item.uri)}`,
-        new St.Icon({
-            icon_name: 'system-file-manager',
-            icon_size: (this.search?.icon_size() ?? DEFAULT_ICON_SIZE) / 2,
-            style_class: "pop-shell-search-cat"
-        }), new St.Icon({
-            gicon: item.icon,
-            icon_size: this.search?.icon_size() ?? DEFAULT_ICON_SIZE
-        })).container);
+        return this.results.map((item): St.Widget => widgets.application_button(`${item.display_name}: ${decodeURI(item.uri)}`,
+            new St.Icon({
+                icon_name: 'system-file-manager',
+                icon_size: (this.search?.icon_size() ?? DEFAULT_ICON_SIZE) / 2,
+                style_class: "pop-shell-search-cat"
+            }), new St.Icon({
+                gicon: item.icon,
+                icon_size: this.search?.icon_size() ?? DEFAULT_ICON_SIZE
+            })));
     }
 }
 
@@ -185,12 +185,12 @@ export class TerminalLauncher implements LauncherExtension {
     }
 
     apply(cmd: string): boolean {
-        let terminal = TERMINAL.get_or_init(() => {
+        let [terminal, splitter] = TERMINAL.get_or_init(() => {
             let path: string | null = GLib.find_program_in_path('x-terminal-emulator');
-            return path ?? 'gnome-terminal';
+            return path ? [path, "-e"] : ["gnome-terminal", "--"];
         });
 
-        spawnCommandLine(`${terminal} -e sh -c '${cmd}; echo "Press to exit"; read t'`);
+        spawnCommandLine(`${terminal} ${splitter} sh -c '${cmd}; echo "Press to exit"; read t'`);
         return false;
     }
 }
@@ -230,7 +230,7 @@ export class WebSearchLauncher implements LauncherExtension {
             return null;
         }
 
-        const item = new widgets.ApplicationBox(`${this.app_info.get_display_name()}: ${this.get_query(webSearch)}`,
+        const item = widgets.application_button(`${this.app_info.get_display_name()}: ${this.get_query(webSearch)}`,
             new St.Icon({
                 icon_name: 'application-default-symbolic',
                 icon_size: icon_size / 2,
@@ -241,6 +241,6 @@ export class WebSearchLauncher implements LauncherExtension {
                 icon_size: icon_size
             }));
 
-        return [item.container];
+        return [item];
     }
 } 

@@ -70,9 +70,7 @@ export class Launcher extends search.Search {
             if (this.mode !== -1) {
                 const launcher = MODES[this.mode].init(ext, this);
                 const results = launcher.search_results?.(pattern.slice(launcher.prefix.length).trim()) ?? null;
-                results?.forEach(result => {
-                    this.active.push(result);
-                });
+                results?.forEach(button => this.active.push(button));
 
                 return this.active;
             }
@@ -132,7 +130,7 @@ export class Launcher extends search.Search {
                     const [where, app] = selection;
                     const generic = app.generic_name();
 
-                    data = new widgets.ApplicationBox(
+                    data = widgets.application_button(
                         generic ? `${generic} (${app.name()}) [${where}]` : `${app.name()} [${where}]`,
                         new St.Icon({
                             icon_name: 'application-default-symbolic',
@@ -143,7 +141,7 @@ export class Launcher extends search.Search {
                             gicon: app.icon(),
                             icon_size: this.icon_size(),
                         })
-                    ).container;
+                    );
                 }
 
                 this.active.push(data);
@@ -162,7 +160,7 @@ export class Launcher extends search.Search {
             if (id >= this.selections.length) return;
 
             const selected = this.selections[id];
-            if (selected instanceof window.ShellWindow) {
+            if (selected && selected instanceof window.ShellWindow) {
                 if (selected.workspace_id() == ext.active_workspace()) {
                     const rect = selected.rect();
                     ext.overlay.x = rect.x
@@ -185,6 +183,16 @@ export class Launcher extends search.Search {
                     const result = selected[1].launch();
                     if (result instanceof error.Error) {
                         log.error(result.format());
+                    } else {
+                        let exec_name = selected[1].app_info.get_executable();
+                        if (exec_name === "gnome-control-center") {
+                            for (const window of ext.tab_list(Meta.TabList.NORMAL, null)) {
+                                if (window.meta.get_title() === "Settings") {
+                                    window.meta.activate(global.get_current_time());
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -193,7 +201,6 @@ export class Launcher extends search.Search {
 
             const launcher = (this.mode >= 0) ? MODES[this.mode] : new launchers.WebSearchLauncher();
             launcher.init(ext, this);
-            log.info(`Launcher Extension: "${launcher.name}"`);
             const input = text.startsWith(launcher.prefix) ? text.slice(launcher.prefix.length).trim() : text;
             return launcher.apply(input, index);
         };
@@ -217,7 +224,6 @@ export class Launcher extends search.Search {
                 for (const result of app_info.load_desktop_entries(path)) {
                     if (result.kind == OK) {
                         const value = result.value;
-                        log.info(value.display());
                         this.desktop_apps.push([where, value]);
                     } else {
                         const why = result.value;
@@ -267,12 +273,12 @@ function window_selection(ext: Ext, window: ShellWindow, icon_size: number): St.
         name += ': ' + title;
     }
 
-    return new widgets.ApplicationBox(
+    return widgets.application_button(
         name,
         new St.Icon({
             icon_name: 'focus-windows-symbolic',
             icon_size: icon_size / 2,
             style_class: "pop-shell-search-cat"
         }),
-        window.icon(ext, icon_size)).container;
+        window.icon(ext, icon_size));
 }

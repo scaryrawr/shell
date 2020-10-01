@@ -1,6 +1,6 @@
 const ExtensionUtils = imports.misc.extensionUtils;
 const extension = ExtensionUtils.getCurrentExtension();
-const Gio = imports.gi.Gio;
+const { Gio, Gdk } = imports.gi;
 
 const DARK = ['dark', 'adapta', 'plata', 'dracula']
 
@@ -13,6 +13,8 @@ interface Settings extends GObject.Object {
 
     get_string(key: string): string;
     set_string(key: string, value: string): void;
+
+    bind(key: string, object: GObject.Object, property: string, flags: any): void
 }
 
 function settings_new_id(schema_id: string): Settings | null {
@@ -52,8 +54,12 @@ const GAP_OUTER = 'gap-outer';
 const ROW_SIZE = 'row-size';
 const SEARCH_ENGINE = 'search-engine';
 const SHOW_TITLE = 'show-title';
+const SMART_GAPS = 'smart-gaps';
 const SNAP_TO_GRID = 'snap-to-grid';
 const TILE_BY_DEFAULT = 'tile-by-default';
+const HINT_COLOR_RGBA = 'hint-color-rgba';
+const DEFAULT_RGBA_COLOR = 'rgba(251, 184, 108, 1)'; //pop-orange
+const LOG_LEVEL = 'log-level';
 
 export class ExtensionSettings {
     ext: Settings = settings_new_schema(extension.metadata['settings-schema']);
@@ -77,6 +83,17 @@ export class ExtensionSettings {
 
     gap_outer(): number {
         return this.ext.get_uint(GAP_OUTER);
+    }
+
+    hint_color_rgba() {
+        let rgba = this.ext.get_string(HINT_COLOR_RGBA);
+        let valid_color = new Gdk.RGBA().parse(rgba);
+
+        if (!valid_color) {
+            return DEFAULT_RGBA_COLOR;
+        }
+
+        return rgba;
     }
 
     is_dark(): boolean {
@@ -108,6 +125,10 @@ export class ExtensionSettings {
         return this.ext.get_boolean(SHOW_TITLE);
     }
 
+    smart_gaps(): boolean {
+        return this.ext.get_boolean(SMART_GAPS);
+    }
+
     snap_to_grid(): boolean {
         return this.ext.get_boolean(SNAP_TO_GRID);
     }
@@ -120,6 +141,10 @@ export class ExtensionSettings {
         return this.mutter
             ? this.mutter.get_boolean('workspaces-only-on-primary')
             : false;
+    }
+
+    log_level(): number {
+        return this.ext.get_uint(LOG_LEVEL);
     }
 
     // Setters
@@ -140,6 +165,16 @@ export class ExtensionSettings {
         this.ext.set_uint(GAP_OUTER, gap);
     }
 
+    set_hint_color_rgba(rgba: string) {
+        let valid_color = new Gdk.RGBA().parse(rgba);
+
+        if (valid_color) {
+            this.ext.set_string(HINT_COLOR_RGBA, rgba);
+        } else {
+            this.ext.set_string(HINT_COLOR_RGBA, DEFAULT_RGBA_COLOR);
+        }
+    }
+
     set_row_size(size: number) {
         this.ext.set_uint(ROW_SIZE, size);
     }
@@ -152,11 +187,19 @@ export class ExtensionSettings {
         this.ext.set_boolean(SHOW_TITLE, set);
     }
 
+    set_smart_gaps(set: boolean) {
+        this.ext.set_boolean(SMART_GAPS, set);
+    }
+
     set_snap_to_grid(set: boolean) {
         this.ext.set_boolean(SNAP_TO_GRID, set);
     }
 
     set_tile_by_default(set: boolean) {
         this.ext.set_boolean(TILE_BY_DEFAULT, set);
+    }
+
+    set_log_level(set: number) {
+        this.ext.set_uint(LOG_LEVEL, set);
     }
 }
