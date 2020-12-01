@@ -1,20 +1,21 @@
 // @ts-ignore
 const Me = imports.misc.extensionUtils.getCurrentExtension();
 
+import * as Config from 'config';
 import * as lib from 'lib';
 import * as log from 'log';
 import * as once_cell from 'once_cell';
 import * as Rect from 'rectangle';
 import * as Tags from 'tags';
+import * as Tweener from 'tweener';
 import * as utils from 'utils';
 import * as xprop from 'xprop';
-import * as Tweener from 'tweener';
-
 import type { Entity } from './ecs';
 import type { Ext } from './extension';
 import type { Rectangle } from './rectangle';
 
-// const GLib: GLib = imports.gi.GLib;
+
+const { DefaultPointerPosition } = Config;
 const { Gdk, Meta, Shell, St, GLib } = imports.gi;
 
 const { OnceCell } = once_cell;
@@ -52,13 +53,16 @@ export class ShellWindow {
     stack: number | null = null;
     known_workspace: number;
     grab: boolean = false;
-
-    was_attached_to?: [Entity, boolean];
+    activate_after_move: boolean = false;
+    ignore_detach: boolean = false;
+    was_attached_to?: [Entity, boolean | number];
 
     // True if this window is currently smart-gapped
     smart_gapped: boolean = false;
 
     border: St.Bin = new St.Bin({ style_class: 'pop-shell-active-hint pop-shell-border-normal' });
+
+    prev_rect: null | Rectangular = null;
 
     private was_hidden: boolean = false;
 
@@ -81,10 +85,6 @@ export class ShellWindow {
 
         this.known_workspace = this.workspace_id()
 
-        if (this.is_transient()) {
-            window.make_above();
-        }
-
         if (this.may_decorate()) {
             if (!window.is_client_decorated()) {
                 if (ext.settings.show_title()) {
@@ -96,42 +96,21 @@ export class ShellWindow {
         }
 
         this.bind_window_events();
-
-        this.border.connect('style-changed', () => {
-            this.on_style_changed();
-        });
-
-        this.hide_border()
-        
-        let settings = ext.settings;
-        let selected_color = settings.hint_color_rgba();
-    
-        this.border.set_style(`border-color: ${selected_color}`);
-        
-        let change_id = settings.ext.connect('changed', (_, key) => {
-            if (this.border) {
-                if (key === 'hint-color-rgba') {
-                    let color_value = settings.hint_color_rgba();
-                    this.border.set_style(`border-color: ${color_value}`);
-                }
-            }
-            return false;
-        });
-        
-        this.border.connect('destroy', () => { settings.ext.disconnect(change_id) });
+        this.bind_hint_events();
 
         global.window_group.add_child(this.border);
 
+        this.hide_border();
         this.restack();
+        this.update_border_layout();
 
         if (this.meta.get_compositor_private()?.get_stage())
             this.on_style_changed();
 
-        this.update_border_layout();
     }
 
     activate(): void {
-        activate(this.meta);
+        activate(this.ext.conf.default_pointer_position, this.meta);
     }
 
     actor_exists(): boolean {
@@ -146,6 +125,55 @@ export class ShellWindow {
                 this.meta.connect('workspace-changed', () => { this.workspace_changed() }),
                 this.meta.connect('raised', () => { this.window_raised() }),
             );
+    }
+
+    private bind_hint_events() {
+        let settings = this.ext.settings;
+        let change_id = settings.ext.connect('changed', (_, key) => {
+            if (this.border) {
+                if (key === 'hint-color-rgba') {
+                    this.update_hint_colors();
+                }
+            }
+            return false;
+        });
+
+        this.border.connect('destroy', () => { settings.ext.disconnect(change_id) });
+        this.border.connect('style-changed', () => {
+            this.on_style_changed();
+        });
+
+        this.update_hint_colors();
+    }
+
+    /**
+     * Adjust the colors for: 
+     * - border hint
+     * - overlay
+     */
+    private update_hint_colors() {
+        let settings = this.ext.settings;
+        const color_value = settings.hint_color_rgba();
+
+        if (this.ext.overlay) {
+            const gdk = new Gdk.RGBA();
+            // TODO Probably move overlay color/opacity to prefs.js in future,
+            // For now mimic the hint color with lower opacity
+            const overlay_alpha = 0.3;
+            const orig_overlay = 'rgba(53, 132, 228, 0.3)';
+            gdk.parse(color_value);
+
+            if (utils.is_dark(gdk.to_string())) {
+                // too dark, use the blue overlay
+                gdk.parse(orig_overlay);
+            }
+
+            gdk.alpha = overlay_alpha
+            this.ext.overlay.set_style(`background: ${gdk.to_string()}`);
+        }
+
+        if (this.border)
+            this.border.set_style(`border-color: ${color_value}`);
     }
 
     cmdline(): string | null {
@@ -220,17 +248,21 @@ export class ShellWindow {
     }
 
     is_tilable(ext: Ext): boolean {
+        let tile_checks = () => {
+            let wm_class = this.meta.get_wm_class();
+            return !this.meta.is_skip_taskbar()
+                // Only normal windows will be considered for tiling
+                && this.meta.window_type == Meta.WindowType.NORMAL
+                // Transient windows are most likely dialogs
+                && !this.is_transient()
+                // If a window lacks a class, it's probably an web browser dialog
+                && wm_class !== null
+                // Blacklist any windows that happen to leak through our filter
+                && !ext.conf.window_shall_float(wm_class, this.meta.get_title());
+        };
+
         return !ext.contains_tag(this.entity, Tags.Floating)
-            && ext.tilable.get_or(this.entity, () => {
-                let wm_class = this.meta.get_wm_class();
-                return !this.meta.is_skip_taskbar()
-                    // Only normal windows will be considered for tiling
-                    && this.meta.window_type === Meta.WindowType.NORMAL
-                    // Transient windows are most likely dialogs
-                    && !this.is_transient()
-                    // Blacklist any windows that happen to leak through our filter
-                    && (wm_class === null || !ext.conf.window_shall_float(wm_class, this.meta.get_title()));
-            });
+            && tile_checks()
     }
 
     is_transient(): boolean {
@@ -243,29 +275,36 @@ export class ShellWindow {
     }
 
     move(ext: Ext, rect: Rectangular, on_complete?: () => void) {
+        if ((!this.same_workspace() && this.is_maximized())) {
+            return
+        }
+
+        this.hide_border();
         const clone = Rect.Rectangle.from_meta(rect);
-        const actor = this.meta.get_compositor_private();
+        const meta = this.meta;
+        const actor = meta.get_compositor_private();
+
         if (actor) {
-            this.meta.unmaximize(Meta.MaximizeFlags.HORIZONTAL);
-            this.meta.unmaximize(Meta.MaximizeFlags.VERTICAL);
-            this.meta.unmaximize(Meta.MaximizeFlags.HORIZONTAL | Meta.MaximizeFlags.VERTICAL);
+            meta.unmaximize(Meta.MaximizeFlags.HORIZONTAL);
+            meta.unmaximize(Meta.MaximizeFlags.VERTICAL);
+            meta.unmaximize(Meta.MaximizeFlags.HORIZONTAL | Meta.MaximizeFlags.VERTICAL);
 
             const entity_string = String(this.entity);
-
-            this.hide_border();
+            ext.movements.insert(this.entity, clone);
 
             const onComplete = () => {
-                ext.register({ tag: 2, window: this, kind: { tag: 1, rect: clone } });
+                ext.register({ tag: 2, window: this, kind: { tag: 1 } });
                 if (on_complete) ext.register_fn(on_complete);
                 ext.tween_signals.delete(entity_string);
-                if (this.meta.appears_focused) {
+                if (meta.appears_focused) {
+                    this.update_border_layout();
                     this.show_border();
                 }
             };
 
             if (ext.animate_windows && !ext.init) {
-                const current = this.meta.get_frame_rect();
-                const buffer = this.meta.get_buffer_rect();
+                const current = meta.get_frame_rect();
+                const buffer = meta.get_buffer_rect();
 
                 const dx = current.x - buffer.x;
                 const dy = current.y - buffer.y;
@@ -282,10 +321,12 @@ export class ShellWindow {
                 const x = clone.x - dx;
                 const y = clone.y - dy;
 
-                Tweener.add(actor, { x, y, duration: 149, mode: null });
+                const duration = ext.tiler.moving ? 49 : 149;
+
+                Tweener.add(this, { x, y, duration, mode: null });
 
                 ext.tween_signals.set(entity_string, [
-                    Tweener.on_window_tweened(this.meta, onComplete),
+                    Tweener.on_window_tweened(this, onComplete),
                     onComplete
                 ]);
             } else {
@@ -318,7 +359,7 @@ export class ShellWindow {
         let br = other.rect().clone();
 
         other.move(ext, ar);
-        this.move(ext, br, () => place_pointer_on(this.meta));
+        this.move(ext, br, () => place_pointer_on(this.ext.conf.default_pointer_position, this.meta));
     }
 
 
@@ -347,14 +388,16 @@ export class ShellWindow {
     }
 
     show_border() {
+        this.restack();
         if (this.ext.settings.active_hint()) {
             let border = this.border;
             if (!this.meta.is_fullscreen() &&
                 !this.meta.minimized &&
                 this.same_workspace()) {
-                border.show();
+                if (this.meta.appears_focused) {
+                    border.show();
+                }
             }
-            this.restack();
         }
     }
 
@@ -372,6 +415,11 @@ export class ShellWindow {
      * @param updateState NORMAL, RAISED, WORKSPACE_CHANGED
      */
     restack(updateState: RESTACK_STATE = RESTACK_STATE.NORMAL) {
+        this.update_border_layout();
+
+        if (this.meta.is_fullscreen()) {
+            this.hide_border()
+        }
 
         let restackSpeed = RESTACK_SPEED.NORMAL;
 
@@ -393,6 +441,7 @@ export class ShellWindow {
             let win_group = global.window_group;
 
             if (actor && border && win_group) {
+                this.update_border_layout();
                 // move the border above the window group first
                 win_group.set_child_above_sibling(border, null);
 
@@ -406,12 +455,21 @@ export class ShellWindow {
                         }
                     }
 
-                    // finally, move the border above the current window actor
+                    // Move the border above the current window actor
                     if (border.get_parent() === actor.get_parent()) {
                         win_group.set_child_above_sibling(border, actor);
                     }
                 }
-                this.update_border_layout();
+
+                // Honor transient windows
+                for (const window of this.ext.windows.values()) {
+                    const parent = window.meta.get_transient_for()
+                    const window_actor = window.meta.get_compositor_private();
+                    if (!parent || !window_actor) continue
+                    const parent_actor = parent.get_compositor_private()
+                    if (!parent_actor && parent_actor !== actor) continue
+                    win_group.set_child_below_sibling(border, window_actor)
+                }
             }
 
             return false; // make sure it runs once
@@ -429,53 +487,64 @@ export class ShellWindow {
         return above_windows;
     }
 
+
     hide_border() {
         let b = this.border;
         if (b) b.hide();
     }
 
-    private update_border_layout() {
-        let frameRect = this.meta.get_frame_rect();
-        let [frameX, frameY, frameWidth, frameHeight] = [frameRect.x, frameRect.y, frameRect.width, frameRect.height];
-
+    update_border_layout() {
+        let rect = this.meta.get_frame_rect();
         let border = this.border;
         let borderSize = this.border_size;
 
-        if (!this.is_max_screen()) {
-            border.remove_style_class_name('pop-shell-border-maximize');
-        } else {
-            borderSize = 0;
-            border.add_style_class_name('pop-shell-border-maximize');
-        }
-
-        let stack_number = this.stack;
-
-        if (stack_number !== null) {
-            const stack = this.ext.auto_tiler?.forest.stacks.get(stack_number);
-            if (stack) {
-                let stack_tab_height = stack.tabs_height;
-
-                if (borderSize === 0 || this.grab) { // not in max screen state
-                    stack_tab_height = 0;
-                }
-
-                border.set_position(frameX - borderSize, frameY - stack_tab_height - borderSize);
-                border.set_size(frameWidth + 2 * borderSize, frameHeight + stack_tab_height + 2 * borderSize);
+        if (border) {
+            if (!this.is_max_screen()) {
+                border.remove_style_class_name('pop-shell-border-maximize');
+            } else {
+                borderSize = 0;
+                border.add_style_class_name('pop-shell-border-maximize');
             }
-        } else {
-            border.set_position(frameX - borderSize, frameY - borderSize);
-            border.set_size(frameWidth + (2 * borderSize), frameHeight + (2 * borderSize));
+
+            let stack_number = this.stack;
+
+            if (stack_number !== null) {
+                const stack = this.ext.auto_tiler?.forest.stacks.get(stack_number);
+                if (stack) {
+                    let stack_tab_height = stack.tabs_height;
+
+                    if (borderSize === 0 || this.grab) { // not in max screen state
+                        stack_tab_height = 0;
+                    }
+
+                    border.set_position(rect.x - borderSize, rect.y - stack_tab_height - borderSize);
+                    border.set_size(rect.width + 2 * borderSize, rect.height + stack_tab_height + 2 * borderSize);
+                }
+            } else {
+                border.set_position(rect.x - borderSize, rect.y - borderSize);
+                border.set_size(rect.width + (2 * borderSize), rect.height + (2 * borderSize));
+            }
         }
     }
 
     private window_changed() {
-        this.ext.show_border_on_focused();
         this.update_border_layout();
+        this.show_border();
     }
 
     private window_raised() {
         this.restack(RESTACK_STATE.RAISED);
         this.show_border();
+        if (this.ext.conf.move_pointer_on_switch && !this.pointer_already_on_window()) {
+            place_pointer_on(this.ext.conf.default_pointer_position, this.meta);
+        }
+    }
+
+    private pointer_already_on_window(): boolean {
+        const rect = Rect.Rectangle.from_meta(this.meta.get_frame_rect());
+        const cursor = lib.cursor_rect();
+
+        return cursor.intersects(rect);
     }
 
     private workspace_changed() {
@@ -483,18 +552,44 @@ export class ShellWindow {
     }
 }
 
-/// Activates a window, and moves the mouse point to the center of it.
-export function activate(win: Meta.Window) {
+/// Activates a window, and moves the mouse point.
+export function activate(default_pointer_position: Config.DefaultPointerPosition, win: Meta.Window) {
     win.raise();
     win.unminimize();
     win.activate(global.get_current_time());
-    place_pointer_on(win)
+    place_pointer_on(default_pointer_position, win)
 }
 
-export function place_pointer_on(win: Meta.Window) {
+export function place_pointer_on(default_pointer_position: Config.DefaultPointerPosition, win: Meta.Window) {
     const rect = win.get_frame_rect();
-    const x = rect.x + 8;
-    const y = rect.y + 8;
+    let x = rect.x;
+    let y = rect.y;
+
+    switch (default_pointer_position) {
+        case DefaultPointerPosition.TopLeft:
+            x += 8;
+            y += 8;
+            break;
+        case DefaultPointerPosition.BottomLeft:
+            x += 8;
+            y += (rect.height - 16);
+            break;
+        case DefaultPointerPosition.TopRight:
+            x += (rect.width - 16);
+            y += 8;
+            break;
+        case DefaultPointerPosition.BottomRight:
+            x += (rect.width - 16);
+            y += (rect.height - 16);
+            break;
+        case DefaultPointerPosition.Center:
+            x += (rect.width / 2) + 8;
+            y += (rect.height / 2) + 8;
+            break;
+        default:
+            x += 8;
+            y += 8;
+    }
 
     const display = Gdk.DisplayManager.get().get_default_display();
 

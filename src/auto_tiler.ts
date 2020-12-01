@@ -75,10 +75,10 @@ export class AutoTiler {
         }
 
         const a_fn = a_fork.replace_window(ext, a_win, b_win);
-        this.attached.insert(b, a_ent);
+        this.forest.on_attach(a_ent, b);
 
         const b_fn = b_fork.replace_window(ext, b_win, a_win);
-        this.attached.insert(a, b_ent);
+        this.forest.on_attach(b_ent, a);
 
         if (a_fn) a_fn();
         if (b_fn) b_fn();
@@ -138,7 +138,7 @@ export class AutoTiler {
         }
 
         const [entity, fork] = this.forest.create_toplevel(win.entity, rect.clone(), workspace_id)
-        this.attached.insert(win.entity, entity);
+        this.forest.on_attach(entity, win.entity);
         fork.smart_gapped = smart_gaps;
         win.smart_gapped = smart_gaps;
 
@@ -153,7 +153,7 @@ export class AutoTiler {
             const [, fork] = attached;
             const monitor = ext.monitors.get(attachee.entity);
             if (monitor) {
-                if (fork.is_toplevel && fork.smart_gapped) {
+                if (fork.is_toplevel && fork.smart_gapped && fork.right) {
                     fork.smart_gapped = false;
                     let rect = ext.monitor_work_area(fork.monitor);
 
@@ -173,8 +173,14 @@ export class AutoTiler {
         }
     }
 
+
+
     /** Tile a window onto a workspace */
     attach_to_workspace(ext: Ext, win: ShellWindow, id: [number, number]) {
+        if (ext.should_ignore_workspace(id[0])) {
+            id = [id[0], 0]
+        }
+
         const toplevel = this.forest.find_toplevel(id);
 
         if (toplevel) {
@@ -208,6 +214,18 @@ export class AutoTiler {
 
     /** Destroy all widgets owned by this object. Call before dropping. */
     destroy(ext: Ext) {
+        for (const [, [fent,]] of this.forest.toplevel) {
+            for (const node of this.forest.iter(fent)) {
+                if (node.inner.kind === 2) {
+                    this.forest.on_detach(node.inner.entity)
+                } else if (node.inner.kind === 3) {
+                    for (const window of node.inner.entities) {
+                        this.forest.on_detach(window)
+                    }
+                }
+            }
+        }
+
         for (const stack of this.forest.stacks.values()) stack.destroy();
 
         for (const window of ext.windows.values()) {
@@ -233,6 +251,8 @@ export class AutoTiler {
 
                 this.tile(ext, fork, fork.area);
             }
+
+            ext.windows.with(win, (info) => info.ignore_detach = false);
         });
     }
 
@@ -303,11 +323,31 @@ export class AutoTiler {
      * - If the window is dropped onto a window, tile onto it
      * - If no window is present, tile onto the monitor
      */
-    on_drop(ext: Ext, win: ShellWindow) {
-        if (this.dropped_on_sibling(ext, win.entity)) return;
-
+    on_drop(ext: Ext, win: ShellWindow, via_overview: boolean = false) {
         const [cursor, monitor] = ext.cursor_status();
         const workspace = ext.active_workspace();
+
+        const attach_mon = () => {
+            const workspace_id: [number, number] = [monitor, workspace]
+            const toplevel = this.forest.find_toplevel(workspace_id);
+            if (toplevel) {
+                const attach_to = this.forest.largest_window_on(ext, toplevel);
+                if (attach_to) {
+                    this.attach_to_window(ext, attach_to, win, cursor);
+                    return;
+                }
+            }
+
+            this.attach_to_monitor(ext, win, workspace_id, ext.settings.smart_gaps());
+        }
+
+        if (via_overview) {
+            this.detach_window(ext, win.entity);
+            attach_mon()
+            return
+        }
+
+        if (this.dropped_on_sibling(ext, win.entity)) return;
 
         let attach_to = null;
         for (const found of ext.windows_at_pointer(cursor, monitor, workspace)) {
@@ -322,16 +362,7 @@ export class AutoTiler {
         if (attach_to) {
             this.attach_to_window(ext, attach_to, win, cursor);
         } else {
-            const toplevel = this.forest.find_toplevel([monitor, workspace]);
-            if (toplevel) {
-                attach_to = this.forest.largest_window_on(ext, toplevel);
-                if (attach_to) {
-                    this.attach_to_window(ext, attach_to, win, cursor);
-                    return;
-                }
-            }
-
-            this.attach_to_monitor(ext, win, ext.workspace_id(win), ext.settings.smart_gaps());
+            attach_mon()
         }
     }
 
@@ -357,6 +388,17 @@ export class AutoTiler {
         if (ext.contains_tag(focused.entity, Tags.Floating)) {
             ext.delete_tag(focused.entity, Tags.Floating);
             this.auto_tile(ext, focused, false);
+        } else if (!focused.is_tilable(ext)) {
+            if (ext.contains_tag(focused.entity, Tags.ForcedTile)) {
+                ext.delete_tag(focused.entity, Tags.ForcedTile);
+                const fork_entity = this.attached.get(focused.entity);
+                if (fork_entity) {
+                    this.detach_window(ext, focused.entity);
+                }
+            } else {
+                ext.add_tag(focused.entity, Tags.ForcedTile);
+                this.auto_tile(ext, focused, false);
+            }
         } else {
             const fork_entity = this.attached.get(focused.entity);
             if (fork_entity) {
@@ -403,7 +445,7 @@ export class AutoTiler {
 
                 if (fork.left.is_window(focused.entity)) {
                     // Assign left window as stack.
-                    focused.stack = this.forest.stacks.insert(new Stack(ext, focused.entity, fork.workspace));
+                    focused.stack = this.forest.stacks.insert(new Stack(ext, focused.entity, fork.workspace, fork.monitor));
                     fork.left = node.Node.stacked(focused.entity, focused.stack);
                     fork.measure(this.forest, ext, fork.area, this.forest.on_record());
                 } else if (fork.left.is_in_stack(focused.entity)) {
@@ -417,7 +459,7 @@ export class AutoTiler {
                     };
                 } else if (fork.right?.is_window(focused.entity)) {
                     // Assign right window as stack
-                    focused.stack = this.forest.stacks.insert(new Stack(ext, focused.entity, fork.workspace));
+                    focused.stack = this.forest.stacks.insert(new Stack(ext, focused.entity, fork.workspace, fork.monitor));
                     fork.right = node.Node.stacked(focused.entity, focused.stack);
                     fork.measure(this.forest, ext, fork.area, this.forest.on_record());
                 } else if (fork.right?.is_in_stack(focused.entity)) {

@@ -1,12 +1,19 @@
 # Retrieve the UUID from ``metadata.json``
 UUID = $(shell grep -E '^[ ]*"uuid":' ./metadata.json | sed 's@^[ ]*"uuid":[ ]*"\(.\+\)",[ ]*@\1@')
+VERSION = $(shell grep version tsconfig.json | awk -F\" '{print $$4}')
+
+ifeq ($(XDG_DATA_HOME),)
+XDG_DATA_HOME = $(HOME)/.local/share
+endif
 
 ifeq ($(strip $(DESTDIR)),)
-INSTALLBASE = $(HOME)/.local/share/gnome-shell/extensions
+INSTALLBASE = $(XDG_DATA_HOME)/gnome-shell/extensions
 else
 INSTALLBASE = $(DESTDIR)/usr/share/gnome-shell/extensions
 endif
 INSTALLNAME = $(UUID)
+
+PROJECTS = color_dialog floating_exceptions
 
 $(info UUID is "$(UUID)")
 
@@ -17,27 +24,30 @@ sources = src/*.ts *.css
 all: depcheck compile
 
 clean:
-	rm -rf _build schemas/gschemas.compiled
+	rm -rf _build schemas/gschemas.compiled target
 
-transpile: $(sources)
+transpile: $(sources) clean
 	tsc
+	for proj in $(PROJECTS); do tsc --p src/$${proj}; done
+
+# Configure local settings on system
+configure:
+	sh scripts/configure.sh
+
+convert: transpile
+	sh scripts/transpile.sh
 
 compile: convert metadata.json schemas
 	rm -rf _build
 	mkdir -p _build
-	cp -r metadata.json icons schemas target/*.js imports/*.js *.css src/gtk/*.js _build
-
-convert: transpile
-	for file in target/*.js; do \
-		sed -i \
-			-e 's#export function#function#g' \
-			-e 's#export var#var#g' \
-			-e 's#export const#var#g' \
-			-e 's#Object.defineProperty(exports, "__esModule", { value: true });#var exports = {};#g' \
-			"$${file}"; \
-		sed -i -E 's/export class (\w+)/var \1 = class \1/g' "$${file}"; \
-		sed -i -E "s/import \* as (\w+) from '(\w+)'/const \1 = Me.imports.\2/g" "$${file}"; \
+	cp -r metadata.json icons schemas target/*.js imports/*.js *.css _build
+	for proj in $(PROJECTS); do \
+		mkdir -p _build/$${proj}; \
+		cp -r target/$${proj}/*.js _build/$${proj}; \
 	done
+
+# Rebuild, install, reconfigure local settings, restart shell, and listen to journalctl logs
+debug: depcheck compile install configure enable restart-shell listen
 
 depcheck:
 	@echo depcheck
@@ -55,6 +65,8 @@ disable:
 
 listen:
 	journalctl -o cat -n 0 -f "$$(which gnome-shell)" | grep -v warning
+
+local-install: depcheck compile install configure enable restart-shell
 
 install:
 	rm -rf $(INSTALLBASE)/$(INSTALLNAME)
@@ -74,7 +86,7 @@ restart-shell:
 
 update-repository:
 	git fetch origin
-	git reset --hard origin/master_focal
+	git reset --hard origin/master
 	git clean -fd
 
 schemas: schemas/gschemas.compiled
@@ -84,4 +96,5 @@ schemas/gschemas.compiled: schemas/*.gschema.xml
 	glib-compile-schemas schemas
 
 zip-file: all
-	cd _build && zip -qr "../$(UUID)$(VSTRING).zip" .
+	cd _build && zip -qr "../$(UUID)_$(VERSION).zip" .
+

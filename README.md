@@ -1,4 +1,4 @@
-# Pop Shell - WIP
+# Pop Shell
 
 Pop Shell is a keyboard-driven layer for GNOME Shell which allows for quick and sensible navigation and management of windows. The core feature of Pop Shell is the addition of advanced tiling window management — a feature that has been highly-sought within our community. For many — ourselves included — i3wm has become the leading competitor to the GNOME desktop.
 
@@ -6,7 +6,7 @@ Tiling window management in GNOME is virtually nonexistent, which makes the desk
 
 Therefore, we see an opportunity here to advance the usability of the GNOME desktop to better accomodate the needs of our community with Pop Shell. Advanced tiling window management is a must for the desktop, so we've merged i3-like tiling window management with the GNOME desktop for the best of both worlds.
 
-[![](./screenshot.webp)](https://raw.githubusercontent.com/pop-os/shell/master_focal/screenshot.webp)
+[![](./screenshot.webp)](https://raw.githubusercontent.com/pop-os/shell/master/screenshot.webp)
 
 ---
 
@@ -20,7 +20,6 @@ Therefore, we see an opportunity here to advance the usability of the GNOME desk
   - [Stacking Mode](#stacking-mode): Behaviors specific to the stacking mode
   - [Auto-Tile Mode](#auto-tile-mode): Behaviors specific to the auto-tiling mode
 - [Developers](#developers): Guide for getting started with development
-
 ---
 
 ## The Proposal
@@ -69,11 +68,15 @@ To install this GNOME Shell extension, you MUST have the following:
 - TypeScript 3.8
 - GNU Make
 
-Proper functionality of the shell requires modifying GNOME's default keyboard shortcuts. Those developing and testing the extension must run the `rebuild.sh` script to install it locally (do not use sudo): `sh rebuild.sh`.
-
-This will call `make` to transpile the TypeScript source code into GJS-compatible JavaScript sources, followed by `make install` to install it locally into `~/.local/share/gnome-shell/extensions`, and modifying the default keyboard shortcuts in GNOME.
+Proper functionality of the shell requires modifying GNOME's default keyboard shortcuts. For a local installation, run `make local-install`.
 
 If you want to uninstall the extension, you may invoke `make uninstall`, and then open the "Keyboard Shortcuts" panel in GNOME Settings to select the "Reset All.." button in the header bar.
+
+> Note that if you are packaging for your Linux distribution, many features in Pop Shell will not work out of the box because they require changes to GNOME's default keyboard shortcuts. A local install is necessary if you aren't packaging your own GNOME session with these default keyboard shortcuts unset or changed.
+
+### Packaging status
+
+- [Fedora](https://src.fedoraproject.org/rpms/gnome-shell-extension-pop-shell/): `sudo dnf install gnome-shell-extension-pop-shell`
 
 ---
 
@@ -99,6 +102,7 @@ These are key to many of the shortcuts utilized by tiling window managers. This 
 - `Super` + `f`: Files
 - `Super` + `e`: Email
 - `Super` + `b`: Web Browser
+- `Super` + `t`: Terminal
 
 ### Window Management Mode
 
@@ -191,7 +195,7 @@ This provides the tiling window manager experience, where windows are automatica
 - Ultra-wide displays are treated as two separate displays by default (**Unimplemented**)
 
 ### Customizing the Floating Window List
-There is file `$HOME/.config/pop-shell/config.json` where you can add the following structure:
+There is file `$XDG_CONFIG_HOME/pop-shell/config.json` where you can add the following structure:
 ```
 {
   class: "<WM_CLASS String from xprop>",
@@ -254,8 +258,17 @@ Also of note is that we have implemented this extension around an entity-compone
 
 Due to the risky nature of plain JavaScript, this GNOME Shell extension is written in [TypeScript](https://www.typescriptlang.org/). In addition to supplying static type-checking and self-documenting classes and interfaces, it allows us to write modern JavaScript syntax whilst supporting generation of code for older targets.
 
-When iterating on the codebase, run `sh rebuild.sh` to `make`, `make install`, configure keyboard shortcuts, begin following gnome-shell logs, and restart GNOME Shell. Note that any logged errors will be referencing the generated JavaScript files located in the `_build/` directory.
+Please install the following as dependencies when developing:
 
+- [`Node.js`](https://nodejs.org/en/) LTS+ (v12+)
+- Latest `npm` (comes with NodeJS)
+- `npm install typescript@latest`
+
+While working on the shell, you can recompile, reconfigure, reinstall, and restart GNOME Shell with logging with `make debug`. Note that this only works reliably in X11 sessions, since Wayland will exit to the login screen on restarting the shell.
+
+[Discussions welcome on Pop Chat](https://chat.pop-os.org/community/channels/dev)
+
+## GNOME JS
 GNOME JS is a little different from standard JS, so the included `Makefile` runs `sed` on the transpiled JavaScript to convert the small number of differences between JS and GJS. Notably, GJS only partially supports ES2015, and has its own module system which works differently from what ES2015 expects. The sed scripts will replace `import` and `export` statements with the expected GNOME variants.
 
 ```js
