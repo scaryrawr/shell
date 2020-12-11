@@ -8,8 +8,10 @@ endif
 
 ifeq ($(strip $(DESTDIR)),)
 INSTALLBASE = $(XDG_DATA_HOME)/gnome-shell/extensions
+PLUGIN_BASE = $(XDG_DATA_HOME)/pop-shell/launcher
 else
 INSTALLBASE = $(DESTDIR)/usr/share/gnome-shell/extensions
+PLUGIN_BASE = $(DESTDIR)/usr/lib/pop-shell/launcher
 endif
 INSTALLNAME = $(UUID)
 
@@ -32,6 +34,11 @@ transpile: $(sources) clean
 
 # Configure local settings on system
 configure:
+	if ! command -v gnome-extensions >/dev/null; then \
+		echo 'You must install gnome-extensions to configure or enable via this script' \
+		'(`gnome-shell` on Debian systems, `gnome-extensions` on openSUSE systems.)'; \
+		exit 1; \
+	fi
 	sh scripts/configure.sh
 
 convert: transpile
@@ -40,7 +47,7 @@ convert: transpile
 compile: convert metadata.json schemas
 	rm -rf _build
 	mkdir -p _build
-	cp -r metadata.json icons schemas target/*.js imports/*.js *.css _build
+	cp -r metadata.json icons schemas target/*.js *.css _build
 	for proj in $(PROJECTS); do \
 		mkdir -p _build/$${proj}; \
 		cp -r target/$${proj}/*.js _build/$${proj}; \
@@ -70,8 +77,10 @@ local-install: depcheck compile install configure enable restart-shell
 
 install:
 	rm -rf $(INSTALLBASE)/$(INSTALLNAME)
-	mkdir -p $(INSTALLBASE)/$(INSTALLNAME)
+	mkdir -p $(INSTALLBASE)/$(INSTALLNAME) $(PLUGIN_BASE)
 	cp -r _build/* $(INSTALLBASE)/$(INSTALLNAME)/
+	cp -r src/plugins/* $(PLUGIN_BASE)
+	chmod +x $(PLUGIN_BASE)/**/*.js
 
 uninstall:
 	rm -rf $(INSTALLBASE)/$(INSTALLNAME)

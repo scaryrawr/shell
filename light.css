@@ -21,12 +21,13 @@
     background: rgba(0, 0, 0, .1);
     border-radius: 5px;
 }
-.pop-shell-search-label {
-    margin-left: 10px;
+
+.pop-shell-search-icon {
+    margin-right: 10px;
 }
 
 .pop-shell-search-cat {
-    margin-right: 15px;
+    margin-right: 10px;
 }
 
 .pop-shell-search-element {
