@@ -23,7 +23,7 @@ class App {
     }
 
     query(input) {
-        const delim_position = input.indexOf(':')
+        const delim_position = input.indexOf(' ')
         const key = input.substring(0, delim_position)
         this.last_query = input.substr(delim_position + 1).trim()
 
@@ -56,6 +56,16 @@ class App {
             case 'amazon':
                 this.query_base = 'https://smile.amazon.com/s?k='
                 this.name_base = 'Amazon'
+                break
+                
+            case 'stack':
+                this.query_base = 'https://stackoverflow.com/search?q='
+                this.name_base = 'Stack Overflow'
+                break
+            
+            case 'crates':
+                this.query_base = 'https://crates.io/search?q='
+                this.name_base = 'Crates.io'
                 break
 
             default:
