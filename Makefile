@@ -9,9 +9,11 @@ endif
 ifeq ($(strip $(DESTDIR)),)
 INSTALLBASE = $(XDG_DATA_HOME)/gnome-shell/extensions
 PLUGIN_BASE = $(XDG_DATA_HOME)/pop-shell/launcher
+SCRIPTS_BASE = $(XDG_DATA_HOME)/pop-shell/scripts
 else
 INSTALLBASE = $(DESTDIR)/usr/share/gnome-shell/extensions
 PLUGIN_BASE = $(DESTDIR)/usr/lib/pop-shell/launcher
+SCRIPTS_BASE = $(DESTDIR)/usr/lib/pop-shell/scripts
 endif
 INSTALLNAME = $(UUID)
 
@@ -54,7 +56,7 @@ compile: convert metadata.json schemas
 	done
 
 # Rebuild, install, reconfigure local settings, restart shell, and listen to journalctl logs
-debug: depcheck compile install configure enable restart-shell listen
+debug: depcheck compile install install-system76-plugins configure enable restart-shell listen
 
 depcheck:
 	@echo depcheck
@@ -73,14 +75,20 @@ disable:
 listen:
 	journalctl -o cat -n 0 -f "$$(which gnome-shell)" | grep -v warning
 
-local-install: depcheck compile install configure enable restart-shell
+local-install: depcheck compile install configure restart-shell enable
 
 install:
 	rm -rf $(INSTALLBASE)/$(INSTALLNAME)
-	mkdir -p $(INSTALLBASE)/$(INSTALLNAME) $(PLUGIN_BASE)
+	mkdir -p $(INSTALLBASE)/$(INSTALLNAME) $(PLUGIN_BASE) $(SCRIPTS_BASE)
 	cp -r _build/* $(INSTALLBASE)/$(INSTALLNAME)/
 	cp -r src/plugins/* $(PLUGIN_BASE)
-	chmod +x $(PLUGIN_BASE)/**/*.js
+	cp -r src/scripts/* $(SCRIPTS_BASE)
+	chmod +x $(PLUGIN_BASE)/**/*.js $(SCRIPTS_BASE)/*
+
+install-system76-plugins:
+	mkdir -p $(SCRIPTS_BASE)
+	cp -r src/scripts_system76/* $(SCRIPTS_BASE)
+	chmod +x $(SCRIPTS_BASE)/*
 
 uninstall:
 	rm -rf $(INSTALLBASE)/$(INSTALLNAME)
@@ -92,6 +100,7 @@ restart-shell:
 	else \
 		gnome-session-quit --logout; \
 	fi
+	sleep 3
 
 update-repository:
 	git fetch origin
