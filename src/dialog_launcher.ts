@@ -11,7 +11,6 @@ import * as result from 'result';
 import * as search from 'dialog_search';
 import * as launch from 'launcher_service';
 import * as plugins from 'launcher_plugins';
-import * as levenshtein from 'levenshtein';
 
 import type { ShellWindow } from 'window';
 import type { Ext } from 'extension';
@@ -93,6 +92,8 @@ export class Launcher extends search.Search {
                 return needles.every((n) => hay.includes(n));
             };
 
+            let apps: Array<launch.SearchOption> = new Array();
+
             // Filter matching windows
             for (const window of ext.tab_list(Meta.TabList.NORMAL, null)) {
                 const retain = contains_pattern(window.name(ext), needles)
@@ -114,7 +115,7 @@ export class Launcher extends search.Search {
                 if (retain) {
                     const generic = app.generic_name();
 
-                    this.options.push(new launch.SearchOption(
+                    apps.push(new launch.SearchOption(
                         app.name(),
                         generic ? generic + " — " + where : where,
                         'application-default-symbolic',
@@ -131,25 +132,19 @@ export class Launcher extends search.Search {
 
                 const pattern_lower = pattern.toLowerCase()
 
-                let a_name_weight = levenshtein.compare(pattern_lower, a_name)
+                const a_includes = a_name.includes(pattern_lower);
+                const b_includes = b_name.includes(pattern_lower);
 
-                let b_name_weight = levenshtein.compare(pattern_lower, b_name)
+                return ((a_includes && b_includes) || (!a_includes && !b_includes)) ? (a_name > b_name ? 1 : 0) : a_includes ? -1 : b_includes ? 1 : 0;
 
-                if (a.description) {
-                    a_name_weight = Math.min(a_name_weight, levenshtein.compare(pattern_lower, a.description.toLowerCase()))
-                }
-
-                if (b.description) {
-                    b_name_weight = Math.min(b_name_weight, levenshtein.compare(pattern_lower, b.description.toLowerCase()))
-                }
-
-                return a_name_weight > b_name_weight ? 1 : 0
             }
 
             // Sort the list of matched selections
             windows.sort(sorter)
             this.options.sort(sorter);
             this.options = windows.concat(this.options)
+
+            for (const app of apps) this.options.push(app)
 
             // Truncate excess items from the list
             this.options.splice(this.list_max());
