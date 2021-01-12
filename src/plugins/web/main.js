@@ -92,6 +92,11 @@ class App {
                 this.name_base = 'Bandcamp'
                 break
 
+            case 'npm':
+                this.query_base = 'https://www.npmjs.com/search?q='
+                this.name_base = 'npm'
+                break
+
             default:
                 this.query_base = 'https://www.duckduckgo.com/?q='
                 this.name_base = 'DuckDuckGo'
