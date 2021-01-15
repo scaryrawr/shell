@@ -11,6 +11,7 @@ import * as Tags from 'tags';
 import * as Tweener from 'tweener';
 import * as window from 'window';
 import * as geom from 'geom';
+import * as exec from 'executor';
 
 import type { Entity } from './ecs';
 import type { Rectangle } from './rectangle';
@@ -35,23 +36,15 @@ export class Tiler {
 
     window: Entity | null = null;
 
-    movements: Array<() => void> = new Array();
-
     moving: boolean = false;
 
     private swap_window: Entity | null = null;
 
+    queue: exec.ChannelExecutor<() => void> = new exec.ChannelExecutor()
+
     constructor(ext: Ext) {
         this.keybindings = {
-            "management-orientation": () => {
-                if (ext.auto_tiler && this.window) {
-                    const window = ext.windows.get(this.window);
-                    if (window) {
-                        ext.auto_tiler.toggle_orientation(ext, window);
-                    }
-                }
-            },
-
+            "management-orientation": () => this.toggle_orientation(ext),
             "tile-move-left": () => this.move_left(ext),
             "tile-move-down": () => this.move_down(ext),
             "tile-move-up": () => this.move_up(ext),
@@ -66,12 +59,19 @@ export class Tiler {
             "tile-swap-right": () => this.swap_right(ext),
             "tile-accept": () => this.accept(ext),
             "tile-reject": () => this.exit(ext),
-            "toggle-stacking": () => {
-                ext.auto_tiler?.toggle_stacking(ext);
-                const win = ext.focus_window();
-                if (win) this.overlay_watch(ext, win);
-            },
+            "toggle-stacking": () => this.toggle_stacking(ext),
         };
+    }
+
+    toggle_orientation(ext: Ext) {
+        const window = ext.focus_window()
+        if (window) ext.auto_tiler?.toggle_orientation(ext, window)
+    }
+
+    toggle_stacking(ext: Ext) {
+        ext.auto_tiler?.toggle_stacking(ext);
+        const win = ext.focus_window();
+        if (win) this.overlay_watch(ext, win);
     }
 
     rect(ext: Ext, monitor: Rectangle): Rectangle | null {
@@ -187,8 +187,8 @@ export class Tiler {
     move(ext: Ext, x: number, y: number, w: number, h: number, direction: Direction, focus: () => window.ShellWindow | number | null) {
         if (!this.window) return;
         if (ext.auto_tiler && !ext.contains_tag(this.window, Tags.Floating)) {
-            if (this.movements.length === 2) return;
-            this.movements.push(() => {
+            if (this.queue.length === 2) return;
+            this.queue.send(() => {
                 const focused = ext.focus_window();
                 if (focused) {
                     // The window that the focused window is being moved onto
@@ -437,7 +437,7 @@ export class Tiler {
 
                     focused.ignore_detach = true;
                     at.detach_window(ext, focused.entity);
-                    at.attach_to_window(ext, move_to, focused, Lib.cursor_rect(), stack_from_left);
+                    at.attach_to_window(ext, move_to, focused, { cursor: Lib.cursor_rect() }, stack_from_left);
                     watching = focused;
                 } else {
                     const parent = at.windows_are_siblings(focused.entity, move_to.entity);
@@ -465,9 +465,11 @@ export class Tiler {
                     }
 
                     if (!watching) {
+                        let movement = { src: focused.meta.get_frame_rect()}
+
                         focused.ignore_detach = true;
                         at.detach_window(ext, focused.entity);
-                        at.attach_to_window(ext, move_to, focused, Lib.cursor_rect(), false);
+                        at.attach_to_window(ext, move_to, focused, movement, false);
                         watching = focused;
                     }
                 }
@@ -662,7 +664,7 @@ export class Tiler {
     }
 
     exit(ext: Ext) {
-        this.movements.splice(0);
+        this.queue.clear()
 
         if (this.window) {
             this.window = null;
