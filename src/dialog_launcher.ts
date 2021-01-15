@@ -108,9 +108,7 @@ export class Launcher extends search.Search {
             for (const [where, app] of this.desktop_apps) {
                 const retain = contains_pattern(app.name(), needles)
                     || contains_pattern(app.desktop_name, needles)
-                    || lib.ok(app.generic_name(), (s) => contains_pattern(s, needles))
-                    || lib.ok(app.comment(), (s) => contains_pattern(s, needles))
-                    || lib.ok(app.categories(), (s) => contains_pattern(s, needles));
+                    || lib.ok(app.generic_name(), (s) => contains_pattern(s, needles));
 
                 if (retain) {
                     const generic = app.generic_name();
