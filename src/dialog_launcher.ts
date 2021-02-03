@@ -36,6 +36,17 @@ const SEARCH_PATHS: Array<[string, string]> = [
     ["Snap (System)", "/var/lib/snapd/desktop/applications/"]
 ];
 
+const INVALID_REGEX_CHARS = '.()[\\+$^*|?';
+
+function build_regex(pattern: string): RegExp {
+    const regpat = pattern.split('').reduce((reg: string, char: string) => {
+        const part = (INVALID_REGEX_CHARS.includes(char)) ? `\${char}.*` : `${char}.*`;
+        return reg + part;
+    }, '');
+
+    return new RegExp(regpat);
+}
+
 export class Launcher extends search.Search {
     options: Array<launch.SearchOption>
     desktop_apps: Array<[string, AppInfo]>
@@ -85,20 +96,14 @@ export class Launcher extends search.Search {
                 }
             })
 
-            const needles = pattern.toLowerCase().split(' ');
-
-            const contains_pattern = (haystack: string, needles: Array<string>): boolean => {
-                const hay = haystack.toLowerCase();
-                return needles.every((n) => hay.includes(n));
-            };
+            const needles = build_regex(pattern.toLowerCase());
 
             let apps: Array<launch.SearchOption> = new Array();
 
             // Filter matching windows
             for (const window of ext.tab_list(Meta.TabList.NORMAL, null)) {
-                const retain = contains_pattern(window.name(ext), needles)
-                    || contains_pattern(window.meta.get_title(), needles);
-
+                const retain = window.name(ext).toLowerCase().search(needles) >= 0 ||
+                               window.meta.get_title().toLowerCase().search(needles) >= 0;
                 if (retain) {
                     windows.push(window_selection(ext, window, this.icon_size()))
                 }
@@ -106,9 +111,9 @@ export class Launcher extends search.Search {
 
             // Filter matching desktop apps
             for (const [where, app] of this.desktop_apps) {
-                const retain = contains_pattern(app.name(), needles)
-                    || contains_pattern(app.desktop_name, needles)
-                    || lib.ok(app.generic_name(), (s) => contains_pattern(s, needles));
+                const retain = app.name().toLowerCase().search(needles) >= 0 ||
+                               app.desktop_name.toLowerCase().search(needles) >= 0 ||
+                               lib.ok(app.generic_name(), (s) => s.toLowerCase().search(needles) >= 0);
 
                 if (retain) {
                     const generic = app.generic_name();
@@ -125,16 +130,22 @@ export class Launcher extends search.Search {
             }
 
             const sorter = (a: launch.SearchOption, b: launch.SearchOption) => {
-                const a_name = a.title.toLowerCase()
-                const b_name = b.title.toLowerCase()
+                const a_name = a.title.toLowerCase();
+                const b_name = b.title.toLowerCase();
 
-                const pattern_lower = pattern.toLowerCase()
+                const a_index = a_name.search(needles);
+                const b_index = b_name.search(needles);
 
-                const a_includes = a_name.includes(pattern_lower);
-                const b_includes = b_name.includes(pattern_lower);
+                const a_includes = a_index >= 0;
+                const b_includes = b_index >= 0;
 
-                return ((a_includes && b_includes) || (!a_includes && !b_includes)) ? (a_name > b_name ? 1 : 0) : a_includes ? -1 : b_includes ? 1 : 0;
-
+                return (!a_includes && !b_includes) ? (a_name > b_name ? 1 : 0) :
+                    !a_includes ? 1 :
+                    !b_includes ? -1 :
+                    (a_index < b_index) ? 1 :
+                    (b_index < a_index) ? -1 :
+                    ((a_name.match(needles)?.[1]?.length ?? 9999) < (b_name.match(needles)?.[1]?.length ?? 9999)) ? 1 :
+                    -1;
             }
 
             // Sort the list of matched selections
@@ -148,7 +159,7 @@ export class Launcher extends search.Search {
             this.options.splice(this.list_max());
 
             if (this.options.length == 0) {
-                this.service.query(`bing ${pattern}`, (plugin, response) => {
+                this.service.query(ext, `google ${pattern}`, (plugin, response) => {
                     if (!this.last_plugin) this.last_plugin = plugin;
     
                     if (response.event === "queried") {
