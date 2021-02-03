@@ -38,14 +38,25 @@ const SEARCH_PATHS: Array<[string, string]> = [
 
 const INVALID_REGEX_CHARS = '.()[\\+$^*|?';
 
+const REGEX_CACHE = new Map<string, RegExp>();
 function build_regex(pattern: string): RegExp {
-    const regpat = pattern.split('').reduce((reg: string, char: string) => {
-        const part = (INVALID_REGEX_CHARS.includes(char)) ? `\${char}.*` : `${char}.*`;
-        return reg + part;
-    }, '');
+    let expression = REGEX_CACHE.get(pattern);
+    if (expression === undefined) {
+        expression = new RegExp(pattern.split('').reduce((reg: string, char: string) => {
+            const part = (INVALID_REGEX_CHARS.includes(char)) ? `.*\${char}` : `.*${char}`;
+            return reg + part;
+        }, ''), 'ig');
 
-    return new RegExp(regpat);
+        REGEX_CACHE.set(pattern, expression);
+    }
+
+    return expression;
 }
+
+type ScoredSearchOption = launch.SearchOption & {
+    /** Score for sort ranking */
+    score?: number;
+};
 
 export class Launcher extends search.Search {
     options: Array<launch.SearchOption>
@@ -96,14 +107,14 @@ export class Launcher extends search.Search {
                 }
             })
 
-            const needles = build_regex(pattern.toLowerCase());
+            const needles = build_regex(pattern);
 
             let apps: Array<launch.SearchOption> = new Array();
 
             // Filter matching windows
             for (const window of ext.tab_list(Meta.TabList.NORMAL, null)) {
-                const retain = window.name(ext).toLowerCase().search(needles) >= 0 ||
-                               window.meta.get_title().toLowerCase().search(needles) >= 0;
+                const retain = window.name(ext).search(needles) >= 0 ||
+                               window.meta.get_title().search(needles) >= 0;
                 if (retain) {
                     windows.push(window_selection(ext, window, this.icon_size()))
                 }
@@ -111,9 +122,9 @@ export class Launcher extends search.Search {
 
             // Filter matching desktop apps
             for (const [where, app] of this.desktop_apps) {
-                const retain = app.name().toLowerCase().search(needles) >= 0 ||
-                               app.desktop_name.toLowerCase().search(needles) >= 0 ||
-                               lib.ok(app.generic_name(), (s) => s.toLowerCase().search(needles) >= 0);
+                const retain = app.name().search(needles) >= 0 ||
+                               app.desktop_name.search(needles) >= 0 ||
+                               lib.ok(app.generic_name(), (s) => s.search(needles) >= 0);
 
                 if (retain) {
                     const generic = app.generic_name();
@@ -129,23 +140,33 @@ export class Launcher extends search.Search {
                 }
             }
 
-            const sorter = (a: launch.SearchOption, b: launch.SearchOption) => {
-                const a_name = a.title.toLowerCase();
-                const b_name = b.title.toLowerCase();
+            const sorter = (a: ScoredSearchOption, b: ScoredSearchOption) => {
+                const scorer = (opt: ScoredSearchOption) => {
+                    const opt_name = opt.title;
+                    const opt_index = opt_name.search(needles);
+                    if (opt_index < 0) {
+                        return;
+                    }
 
-                const a_index = a_name.search(needles);
-                const b_index = b_name.search(needles);
+                    const opt_lengths = opt_name.match(needles)?.map(s => s.length);
+                    const opt_length = opt_lengths ? Math.min(...opt_lengths) : 9999;
+                    opt.score = opt_index + opt_length;
+                };
 
-                const a_includes = a_index >= 0;
-                const b_includes = b_index >= 0;
+                if (a.score === undefined) {
+                    scorer(a);
+                }
 
-                return (!a_includes && !b_includes) ? (a_name > b_name ? 1 : 0) :
-                    !a_includes ? 1 :
-                    !b_includes ? -1 :
-                    (a_index < b_index) ? 1 :
-                    (b_index < a_index) ? -1 :
-                    ((a_name.match(needles)?.[1]?.length ?? 9999) < (b_name.match(needles)?.[1]?.length ?? 9999)) ? 1 :
-                    -1;
+                if (b.score === undefined) {
+                    scorer(b);
+                }
+
+                return (!a.score && !b.score) ? (a.title > b.title ? 1 : 0) :
+                    !a.score ? 1 :
+                    !b.score ? -1 :
+                    (a.score < b.score) ? -1 :
+                    (b.score < a.score) ? 1 :
+                    0;
             }
 
             // Sort the list of matched selections
@@ -153,13 +174,14 @@ export class Launcher extends search.Search {
             this.options.sort(sorter);
             this.options = windows.concat(this.options)
 
+            apps.sort(sorter);
             for (const app of apps) this.options.push(app)
 
             // Truncate excess items from the list
             this.options.splice(this.list_max());
 
             if (this.options.length == 0) {
-                this.service.query(ext, `google ${pattern}`, (plugin, response) => {
+                this.service.query(ext, `bing ${pattern}`, (plugin, response) => {
                     if (!this.last_plugin) this.last_plugin = plugin;
     
                     if (response.event === "queried") {
