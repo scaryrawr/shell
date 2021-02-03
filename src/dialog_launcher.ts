@@ -148,7 +148,7 @@ export class Launcher extends search.Search {
             this.options.splice(this.list_max());
 
             if (this.options.length == 0) {
-                this.service.query(`bing ${pattern}`, (plugin, response) => {
+                this.service.query(ext, `bing ${pattern}`, (plugin, response) => {
                     if (!this.last_plugin) this.last_plugin = plugin;
     
                     if (response.event === "queried") {
