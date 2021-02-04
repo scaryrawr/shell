@@ -81,8 +81,6 @@ export class Launcher extends search.Search {
 
             this.last_plugin = null
 
-            let windows = new Array()
-
             this.service.query(ext, pattern, (plugin, response) => {
                 if (response.event === "queried") {
                     for (const selection of response.selections) {
@@ -109,36 +107,22 @@ export class Launcher extends search.Search {
 
             const needles = build_regex(pattern);
 
-            let apps: Array<launch.SearchOption> = new Array();
-
             // Filter matching windows
-            for (const window of ext.tab_list(Meta.TabList.NORMAL, null)) {
-                const retain = window.name(ext).search(needles) >= 0 ||
-                               window.meta.get_title().search(needles) >= 0;
-                if (retain) {
-                    windows.push(window_selection(ext, window, this.icon_size()))
-                }
-            }
+            const windows = ext.tab_list(Meta.TabList.NORMAL, null)
+                .filter(window => window.name(ext).search(needles) >= 0 || window.meta.get_title().search(needles) >= 0)
+                .map(window => window_selection(ext, window, this.icon_size()));
 
             // Filter matching desktop apps
-            for (const [where, app] of this.desktop_apps) {
-                const retain = app.name().search(needles) >= 0 ||
-                               app.desktop_name.search(needles) >= 0 ||
-                               lib.ok(app.generic_name(), (s) => s.search(needles) >= 0);
-
-                if (retain) {
-                    const generic = app.generic_name();
-
-                    apps.push(new launch.SearchOption(
-                        app.name(),
-                        generic ? generic + " — " + where : where,
-                        'application-default-symbolic',
-                        { gicon: app.icon() },
-                        this.icon_size(),
-                        { app }
-                    ))
-                }
-            }
+            const apps = this.desktop_apps
+                .filter(info => info[1].name().search(needles) >= 0 || info[1].desktop_name.search(needles) >= 0 || lib.ok(info[1].generic_name(), (s) => s.search(needles) >= 0))
+                .map(info => new launch.SearchOption(
+                    info[1].name(),
+                    info[1].generic_name() ? `${info[1].generic_name()} - ${info[0]}` : info[0],
+                    'application-default-symbolic',
+                    { gicon: info[1].icon() },
+                    this.icon_size(),
+                    { app: info[1] }
+                ));
 
             const sorter = (a: ScoredSearchOption, b: ScoredSearchOption) => {
                 const scorer = (opt: ScoredSearchOption) => {
@@ -171,11 +155,9 @@ export class Launcher extends search.Search {
 
             // Sort the list of matched selections
             windows.sort(sorter)
+            this.options.push(...apps)
             this.options.sort(sorter);
             this.options = windows.concat(this.options)
-
-            apps.sort(sorter);
-            for (const app of apps) this.options.push(app)
 
             // Truncate excess items from the list
             this.options.splice(this.list_max());
