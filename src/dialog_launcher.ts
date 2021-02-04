@@ -36,6 +36,28 @@ const SEARCH_PATHS: Array<[string, string]> = [
     ["Snap (System)", "/var/lib/snapd/desktop/applications/"]
 ];
 
+const INVALID_REGEX_CHARS = '.()[\\+$^*|?';
+
+const REGEX_CACHE = new Map<string, RegExp>();
+function build_regex(pattern: string): RegExp {
+    let expression = REGEX_CACHE.get(pattern);
+    if (expression === undefined) {
+        expression = new RegExp(pattern.split('').reduce((reg: string, char: string) => {
+            const part = (INVALID_REGEX_CHARS.includes(char)) ? `.*\${char}` : `.*${char}`;
+            return reg + part;
+        }, ''), 'ig');
+
+        REGEX_CACHE.set(pattern, expression);
+    }
+
+    return expression;
+}
+
+type ScoredSearchOption = launch.SearchOption & {
+    /** Score for sort ranking */
+    score?: number;
+};
+
 export class Launcher extends search.Search {
     options: Array<launch.SearchOption>
     desktop_apps: Array<[string, AppInfo]>
@@ -85,20 +107,14 @@ export class Launcher extends search.Search {
                 }
             })
 
-            const needles = pattern.toLowerCase().split(' ');
-
-            const contains_pattern = (haystack: string, needles: Array<string>): boolean => {
-                const hay = haystack.toLowerCase();
-                return needles.every((n) => hay.includes(n));
-            };
+            const needles = build_regex(pattern);
 
             let apps: Array<launch.SearchOption> = new Array();
 
             // Filter matching windows
             for (const window of ext.tab_list(Meta.TabList.NORMAL, null)) {
-                const retain = contains_pattern(window.name(ext), needles)
-                    || contains_pattern(window.meta.get_title(), needles);
-
+                const retain = window.name(ext).search(needles) >= 0 ||
+                               window.meta.get_title().search(needles) >= 0;
                 if (retain) {
                     windows.push(window_selection(ext, window, this.icon_size()))
                 }
@@ -106,9 +122,9 @@ export class Launcher extends search.Search {
 
             // Filter matching desktop apps
             for (const [where, app] of this.desktop_apps) {
-                const retain = contains_pattern(app.name(), needles)
-                    || contains_pattern(app.desktop_name, needles)
-                    || lib.ok(app.generic_name(), (s) => contains_pattern(s, needles));
+                const retain = app.name().search(needles) >= 0 ||
+                               app.desktop_name.search(needles) >= 0 ||
+                               lib.ok(app.generic_name(), (s) => s.search(needles) >= 0);
 
                 if (retain) {
                     const generic = app.generic_name();
@@ -124,17 +140,33 @@ export class Launcher extends search.Search {
                 }
             }
 
-            const sorter = (a: launch.SearchOption, b: launch.SearchOption) => {
-                const a_name = a.title.toLowerCase()
-                const b_name = b.title.toLowerCase()
+            const sorter = (a: ScoredSearchOption, b: ScoredSearchOption) => {
+                const scorer = (opt: ScoredSearchOption) => {
+                    const opt_name = opt.title;
+                    const opt_index = opt_name.search(needles);
+                    if (opt_index < 0) {
+                        return;
+                    }
 
-                const pattern_lower = pattern.toLowerCase()
+                    const opt_lengths = opt_name.match(needles)?.map(s => s.length);
+                    const opt_length = opt_lengths ? Math.min(...opt_lengths) : 9999;
+                    opt.score = opt_index + opt_length;
+                };
 
-                const a_includes = a_name.includes(pattern_lower);
-                const b_includes = b_name.includes(pattern_lower);
+                if (a.score === undefined) {
+                    scorer(a);
+                }
 
-                return ((a_includes && b_includes) || (!a_includes && !b_includes)) ? (a_name > b_name ? 1 : 0) : a_includes ? -1 : b_includes ? 1 : 0;
+                if (b.score === undefined) {
+                    scorer(b);
+                }
 
+                return (!a.score && !b.score) ? (a.title > b.title ? 1 : 0) :
+                    !a.score ? 1 :
+                    !b.score ? -1 :
+                    (a.score < b.score) ? -1 :
+                    (b.score < a.score) ? 1 :
+                    0;
             }
 
             // Sort the list of matched selections
@@ -142,6 +174,7 @@ export class Launcher extends search.Search {
             this.options.sort(sorter);
             this.options = windows.concat(this.options)
 
+            apps.sort(sorter);
             for (const app of apps) this.options.push(app)
 
             // Truncate excess items from the list
