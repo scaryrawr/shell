@@ -10,6 +10,7 @@ import * as log from 'log';
 import * as result from 'result';
 import * as search from 'dialog_search';
 import * as launch from 'launcher_service';
+import * as mru from 'mru_app_list';
 import * as plugins from 'launcher_plugins';
 
 import type { ShellWindow } from 'window';
@@ -124,6 +125,7 @@ export class Launcher extends search.Search {
                     { app: info[1] }
                 ));
 
+            const mru_list = new mru.MruList();
             const sorter = (a: ScoredSearchOption, b: ScoredSearchOption) => {
                 const scorer = (opt: ScoredSearchOption) => {
                     const opt_name = opt.title;
@@ -143,6 +145,16 @@ export class Launcher extends search.Search {
 
                 if (b.score === undefined) {
                     scorer(b);
+                }
+
+                const a_recent = mru_list.is_recent(a);
+                const b_recent = mru_list.is_recent(b);
+                if (a_recent && !b_recent) {
+                    return -1;
+                }
+
+                if (b_recent && !a_recent) {
+                    return 1;
                 }
 
                 return (!a.score && !b.score) ? (a.title > b.title ? 1 : 0) :
@@ -222,6 +234,8 @@ export class Launcher extends search.Search {
             }
 
             const option = selected.id
+            const mru_list = new mru.MruList();
+            mru_list.add_recent(selected);
 
             if ("window" in option) {
                 option.window.activate()
