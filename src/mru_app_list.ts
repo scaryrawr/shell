@@ -5,7 +5,7 @@ import * as cfm from 'config_file_manager';
 import * as launch from 'launcher_service';
 
 const MRU_FILE = "mru_apps.json";
-const MAX_ENTRIES = 5;
+const MAX_ENTRIES = 15;
 
 export class MruList {
   entries = new Array<string>();
