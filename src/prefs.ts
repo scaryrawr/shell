@@ -181,6 +181,10 @@ function logging_combo(grid: any, top_index: number) {
 // @ts-ignore
 function buildPrefsWidget() {
     let dialog = settings_dialog_new();
-    dialog.show();
+    if (dialog.show_all) {
+        dialog.show_all()
+    } else {
+        dialog.show();
+    }
     return dialog;
 }
