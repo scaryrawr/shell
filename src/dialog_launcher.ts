@@ -34,7 +34,9 @@ const SEARCH_PATHS: Array<[string, string]> = [
     // User-local flatpaks
     ["Flatpak (User)", HOME_DIR + "/.local/share/flatpak/exports/share/applications/"],
     // System-wide Snaps
-    ["Snap (System)", "/var/lib/snapd/desktop/applications/"]
+    ["Snap (System)", "/var/lib/snapd/desktop/applications/"],
+	// Lutris flatpak
+    ["Lutris (Flatpak)", HOME_DIR + "/.var/app/net.lutris.Lutris/data/applications/"]
 ];
 
 const INVALID_REGEX_CHARS = '.()[\\+$^*|?';
